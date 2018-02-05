@@ -1,0 +1,70 @@
+= Inference-based assessment of identifiability in nonlinear biological models =
+
+This tutorial describes how to download and execute the inferential analyses as
+described in "Inference-based assessment of identifiability in nonlinear biological models",
+submitted to ''Journal of the Royal Society Interface'' in 2017.
+
+== Installation ==
+
+This project requires the Functional Curation add-on to Chaste in order to run, which in turn requires the Chaste source tree to be installed.
+Instructions for this installation can be found for a variety of operating systems under InstallGuides/.
+
+Extra install commands needed as well as the Ubuntu chaste-dependencies package are (on 14.04 at least):
+{{{
+#!sh
+sudo apt-get install python-dev python-scipy python-numpy cython python-tables python-matplotlib python-numexpr python-pip
+sudo apt-get install scons
+sudo -H pip install dill pathos
+}}}
+
+Afterwards, obtain the latest version of all the code from the Chaste repositories using:
+{{{
+#!sh
+git clone -b develop https://chaste.cs.ox.ac.uk/git/chaste.git Chaste
+cd Chaste/projects
+
+# Use your email address as the password for the 'anonymous' account.
+svn co https://chaste.cs.ox.ac.uk/svn/chaste/projects/FunctionalCuration --username anonymous --password my.email@domain.com
+svn co https://chaste.cs.ox.ac.uk/svn/chaste/projects/DalyID --username anonymous --password my.email@domain.com
+}}}
+
+== Usage ==
+
+Source code for the parameter fitting algorithms and plotting routines is contained in the `src` folder.
+Python scripts for performing inference on all model problems can be found in `tests`. 
+
+An annotated CellML file describing the Hodgkin-Huxley model problem can be found in 
+the top-level project directory as `hodgkin_huxley.cellml`, while functional curation
+protocol files that describe the simulation and recording thereof are contained within
+`tests/protocols`.
+
+A description of important files and their contents follows below.
+
+Files relevant for implementation of the samplers:
+ * `src/python/modeling/fitting/MCMC.py` contains the implementation of the adaptice covariance MCMC sampler.
+ * `src/python/modeling/fitting/approximatebayes.py` contains the implementation of the Del Moral ABC-SMC sampler.
+ * `src/python/modeling/fitting/objective.py` contains the implementation of the objective functions used for inference
+
+Files relevant for inference on the logistic model:
+ * `src/python/modeling/simulation/LogisticGrowthExperiment.py` defines the logistic model.
+ * `test/Logistic.py` contains all fitting experiments associated with this model as described in the paper.
+
+Files relevant for inference on the Hodgkin-Huxley model:
+ * `hodgkin-huxley.cellml` in the top-level directory contains a CellML description of the equations governing the Hodgkin-Huxley model.
+ * `test/HHVoltage.py` contains all fitting experiments involving voltage data described in Section 4.1 of the paper.
+ * `test/HHSumStats.py` contains all fitting experiments involving summary statistic data described in Section 4.2 of the paper.
+
+To generate all described posterior estimates for the logistic model
+as described in the paper, go to the top-level Chaste directory and use:
+{{{
+scons projects/DalyID/test/Logistic.py
+}}}
+To generate all described posterior estimates for the Hodgkin-Huxley model
+as described in the paper, use:
+{{{
+scons projects/DalyID/test/HHVoltage.py
+scons projects/DalyID/test/HHSumStats.py
+}}}
+To see verbose output on the progress of the fitting algorithms, add the flag `no_store_results=1` to the `scons` commands above.
+Note however that this will prevent storing a copy of the output on disk.
+
