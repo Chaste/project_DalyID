@@ -1,0 +1,78 @@
+namespace oxmeta = "https://chaste.comlab.ox.ac.uk/cellml/ns/oxford-metadata#"
+namespace aidan = "urn:aidan#"
+
+inputs {
+    # With self-excitation (stimulus current clamp), this generates a full AP
+    sim_time = 12
+}
+
+import std = "BasicLibrary.txt"
+import cardiac = "CardiacLibrary.txt"
+
+units {
+    mV = milli volt
+    ms = milli second
+    microA_per_cm2 = micro ampere . centi metre^-2
+    mV_per_ms = milli volt . milli second^-1
+}
+
+model interface {
+    input oxmeta:time units ms = 0
+
+    output oxmeta:membrane_voltage units mV
+    output oxmeta:time units ms # Needed to stop solver falling over
+
+    # Outputs for sensitivity Jacobian analysis
+    output oxmeta:membrane_fast_sodium_current_m_gate units dimensionless
+    output oxmeta:membrane_fast_sodium_current_h_gate units dimensionless
+    output oxmeta:potassium_channel_n_gate units dimensionless
+    output oxmeta:state_variable
+
+    # Generates self-exciting model (no periodic current injection)
+    # Also, plays nicer with Simon's code (removes heavyside function)
+    clamp oxmeta:membrane_stimulus_current to -20 :: microA_per_cm2
+}
+
+tasks {
+    # Apply a depolarization and run simulation for specified period of time
+    simulation sim = timecourse {
+        range time units ms uniform 0:0.01:sim_time
+        modifiers {
+        }
+    }
+}
+
+post-processing {
+    PeakPotential = std:Max(sim:membrane_voltage)[0]
+    RestPotential = std:Min(sim:membrane_voltage)[0]
+
+    nsteps = sim:time.SHAPE[0]
+
+    # Find time of peak potential (for plotting)
+    t_peak = sim:time[find(map(lambda x: x == PeakPotential, sim:membrane_voltage))[0][0]]
+
+    # Maximum upstroke velocity (and time it occurs)
+    dV = std:Grad(sim:time, sim:membrane_voltage)
+    MaxUpstrokeVel = std:Max(std:Grad(sim:time, sim:membrane_voltage))[0]
+    maxup_ind = find(map(lambda x: x == MaxUpstrokeVel, dV))[0][0]
+    t_maxup = sim:time[maxup_ind]
+    V_maxup = sim:membrane_voltage[maxup_ind]
+}
+
+outputs {
+    t = sim:time "Time"
+    V = sim:membrane_voltage
+    m = sim:membrane_fast_sodium_current_m_gate
+    h = sim:membrane_fast_sodium_current_h_gate
+    n = sim:potassium_channel_n_gate
+    state = sim:state_variable
+
+    # Three summary statistics for inference
+    PeakPotential units mV
+    RestPotential units mV
+    MaxUpstrokeVel units mV_per_ms
+
+    t_peak units ms
+    t_maxup units ms
+    V_maxup units mV
+}

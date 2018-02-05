@@ -1,0 +1,112 @@
+# Import a noisy action potential and associated time points from:
+#   data/HHAPtrace.csv
+# and calculate summary statistics
+
+namespace oxmeta = "https://chaste.comlab.ox.ac.uk/cellml/ns/oxford-metadata#"
+namespace aidan = "urn:aidan#"
+
+inputs {
+    # With self-excitation (stimulus current clamp), this generates a full AP
+    sim_time = 12
+}
+
+import std = "BasicLibrary.txt"
+import cardiac = "CardiacLibrary.txt"
+
+# NONE OF THIS MATTERS - ONLY THERE TO MAKE PROTOCOL RUN
+units {
+    mV = milli volt
+    ms = milli second
+    microA_per_cm2 = micro ampere . centi metre^-2
+    mV_per_ms = milli volt . milli second^-1
+}
+
+model interface {
+    input oxmeta:time units ms = 0
+
+    output oxmeta:membrane_voltage units mV
+    output oxmeta:time units ms # Needed to stop solver falling over
+
+    # Outputs for sensitivity Jacobian analysis
+    output oxmeta:membrane_fast_sodium_current_m_gate units dimensionless
+    output oxmeta:membrane_fast_sodium_current_h_gate units dimensionless
+    output oxmeta:potassium_channel_n_gate units dimensionless
+    output oxmeta:state_variable
+
+    # Generates self-exciting model (no periodic current injection)
+    # Also, plays nicer with Simon's code (removes heavyside function)
+    clamp oxmeta:membrane_stimulus_current to -20 :: microA_per_cm2
+}
+
+tasks {
+    # Apply a depolarization and run simulation for specified period of time
+    simulation sim = timecourse {
+        range time units ms uniform 0:0.001:sim_time
+        modifiers {
+        }
+    }
+}
+
+# ONLY POST-PROCESSING MATTERS
+post-processing {
+    noisy_trace = load("../data/HHAPtrace.csv")
+    t = noisy_trace[0][:]
+    V = noisy_trace[1][:]
+
+    PeakPotential = std:Max(V)[0]
+    RestPotential = std:Min(V)[0]
+
+    nsteps = t.SHAPE[0]
+    time_thin = [t[i] for i in 0:10:nsteps]
+    V_thin = [V[i] for i in 0:10:nsteps]
+   
+    # Specify windowsize=10 (rather than default 50) to increase speed ~5x
+    # SPECIFY DV/DT THRESHOLD AS 20 (rather than 10) otherwise the point of stimulus current 
+    #  impulse will mistakenly be marked as the beginning of the excitation by ApStartAndEnd
+    AP1, AP2 = cardiac:ApStartAndEnd(V_thin, time_thin, 50, default, 20, 10)
+    APD50start = AP1[0]
+    APD50end = AP2[0]
+    APD50 = APD50end-APD50start
+    AP3, AP4 = cardiac:ApStartAndEnd(V_thin, time_thin, 90, default, 20, 10)
+    APD90start = AP3[0]
+    APD90end = AP4[0]
+    APD90 = APD90end-APD90start
+
+    V_APD90 = RestPotential + 0.1*(PeakPotential-RestPotential)
+    V_APD50 = RestPotential + 0.5*(PeakPotential-RestPotential)
+
+    # Find time of peak potential (for plotting)
+    t_peak = t[find(map(lambda x: x == PeakPotential, V))[0][0]]
+
+    # TODO: Currently failing with noisy voltage trace
+    # Maximum upstroke velocity (and time it occurs)
+    dV = std:Grad(t, V)
+    MaxUpstrokeVel = std:Max(std:Grad(t, V))[0]
+    maxup_ind = find(map(lambda x: x == MaxUpstrokeVel, dV))[0][0]
+    t_maxup = t[maxup_ind]
+    V_maxup = V[maxup_ind]
+}
+
+outputs {
+    t units ms
+    V units mV
+
+    # Five summary statistics for inference
+    APD90 units ms
+    APD50 units ms
+    PeakPotential units mV
+    RestPotential units mV
+    MaxUpstrokeVel units mV_per_ms
+
+    # Outputs for plotting
+    APD50start units ms
+    APD50end units ms
+    APD90start units ms
+    APD90end units ms
+    V_APD90 units mV
+    V_APD50 units mV
+
+    t_peak units ms
+    t_maxup units ms
+    V_maxup units mV
+}

@@ -1,0 +1,105 @@
+namespace oxmeta = "https://chaste.comlab.ox.ac.uk/cellml/ns/oxford-metadata#"
+namespace aidan = "urn:aidan#"
+
+inputs {
+    # With self-excitation (stimulus current clamp), this generates a full AP
+    sim_time = 12
+}
+
+import std = "BasicLibrary.txt"
+import cardiac = "CardiacLibrary.txt"
+
+units {
+    mV = milli volt
+    ms = milli second
+    microA_per_cm2 = micro ampere . centi metre^-2
+    mV_per_ms = milli volt . milli second^-1
+}
+
+model interface {
+    input oxmeta:time units ms = 0
+
+    output oxmeta:membrane_voltage units mV
+    output oxmeta:time units ms # Needed to stop solver falling over
+
+    # Outputs for sensitivity Jacobian analysis
+    output oxmeta:membrane_fast_sodium_current_m_gate units dimensionless
+    output oxmeta:membrane_fast_sodium_current_h_gate units dimensionless
+    output oxmeta:potassium_channel_n_gate units dimensionless
+    output oxmeta:state_variable
+
+    # Generates self-exciting model (no periodic current injection)
+    # Also, plays nicer with Simon's code (removes heavyside function)
+    clamp oxmeta:membrane_stimulus_current to -20 :: microA_per_cm2
+}
+
+tasks {
+    # Apply a depolarization and run simulation for specified period of time
+    simulation sim = timecourse {
+        range time units ms uniform 0:0.01:sim_time
+        modifiers {
+        }
+    }
+}
+
+post-processing {
+    PeakPotential = std:Max(sim:membrane_voltage)[0]
+    RestPotential = std:Min(sim:membrane_voltage)[0]
+
+    nsteps = sim:time.SHAPE[0]
+    time_thin = [sim:time[i] for i in 0:10:nsteps]
+    V_thin = [sim:membrane_voltage[i] for i in 0:10:nsteps]
+   
+    # Specify windowsize=10 (rather than default 50) to increase speed ~5x
+    # SPECIFY DV/DT THRESHOLD AS 20 (rather than 10) otherwise the point of stimulus current 
+    #  impulse will mistakenly be marked as the beginning of the excitation by ApStartAndEnd
+    AP1, AP2 = cardiac:ApStartAndEnd(V_thin, time_thin, 50, default, 20, 10)
+    APD50start = AP1[0]
+    APD50end = AP2[0]
+    APD50 = APD50end-APD50start
+    AP3, AP4 = cardiac:ApStartAndEnd(V_thin, time_thin, 90, default, 20, 10)
+    APD90start = AP3[0]
+    APD90end = AP4[0]
+    APD90 = APD90end-APD90start
+
+    V_APD90 = RestPotential + 0.1*(PeakPotential-RestPotential)
+    V_APD50 = RestPotential + 0.5*(PeakPotential-RestPotential)
+
+    # Find time of peak potential (for plotting)
+    t_peak = sim:time[find(map(lambda x: x == PeakPotential, sim:membrane_voltage))[0][0]]
+
+    # Maximum upstroke velocity (and time it occurs)
+    dV = std:Grad(sim:time, sim:membrane_voltage)
+    MaxUpstrokeVel = std:Max(std:Grad(sim:time, sim:membrane_voltage))[0]
+    maxup_ind = find(map(lambda x: x == MaxUpstrokeVel, dV))[0][0]
+    t_maxup = sim:time[maxup_ind]
+    V_maxup = sim:membrane_voltage[maxup_ind]
+}
+
+outputs {
+    t = sim:time "Time"
+    V = sim:membrane_voltage
+    m = sim:membrane_fast_sodium_current_m_gate
+    h = sim:membrane_fast_sodium_current_h_gate
+    n = sim:potassium_channel_n_gate
+    state = sim:state_variable
+
+    # Seven summary statistics for inference
+    APD90 units ms
+    APD50 units ms
+    PeakPotential units mV
+    RestPotential units mV
+    MaxUpstrokeVel units mV_per_ms
+
+    # Outputs for plotting
+    APD50start units ms
+    APD50end units ms
+    APD90start units ms
+    APD90end units ms
+    V_APD90 units mV
+    V_APD50 units mV
+
+    t_peak units ms
+    t_maxup units ms
+    V_maxup units mV
+}

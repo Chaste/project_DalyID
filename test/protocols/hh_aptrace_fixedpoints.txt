@@ -1,0 +1,60 @@
+# Record the membrane potential at a fixed set of input points
+# Used to test the information content of time points chosen by examining the
+#  eigenvalues of the Fisher information matrix (Simon Tavener)
+
+namespace oxmeta = "https://chaste.comlab.ox.ac.uk/cellml/ns/oxford-metadata#"
+namespace aidan = "urn:aidan#"
+
+inputs {
+    # With self-excitation (stimulus current clamp), 12ms generates a full AP
+    # With injected current (remove the clamp), 30ms is required
+    sim_times = [4.0,8.0,12.0]
+    duration = 12
+}
+
+units {
+    mV = milli volt
+    ms = milli second
+    microA_per_cm2 = micro ampere . centi metre^-2
+}
+
+model interface {
+    input oxmeta:time units ms = 0
+
+    output oxmeta:membrane_voltage units mV
+    output oxmeta:time units ms # Needed to stop solver falling over
+
+    # Generates self-exciting model (no periodic current injection)
+    # Also, plays nicer with Simon's code (removes heavyside function)
+    clamp oxmeta:membrane_stimulus_current to -20 :: microA_per_cm2
+}
+
+tasks {
+    # Apply a depolarization and run simulation for specified period of time
+    simulation sim1 = timecourse {
+        range time units ms uniform 0:0.01:sim_times[0]
+        modifiers {
+        }
+    }
+    simulation sim2 = timecourse {
+        range time units ms uniform sim_times[0]:0.01:sim_times[1]
+        modifiers {
+        }
+    }
+    simulation sim3 = timecourse {
+        range time units ms uniform sim_times[1]:0.01:sim_times[2]
+        modifiers {
+        }
+    }
+
+}
+
+post-processing {
+    t = [sim1:time[-1], sim2:time[-1], sim3:time[-1]]
+    V = [sim1:membrane_voltage[-1], sim2:membrane_voltage[-1], sim3:membrane_voltage[-1]]
+}
+
+outputs {
+    t units ms
+    V units mV
+}
