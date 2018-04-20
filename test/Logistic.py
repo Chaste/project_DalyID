@@ -26,7 +26,7 @@ class LogisticFittingSimon(unittest.TestCase):
 		K = 17.5 		# The carrying capacity of the model
 		r = 0.7			# The growth rate of the model
 		x0 = 0.1 		# The (known) initial condition of the model
-		sigma_e = 1.0 	# The (known) standard deviation of the observation error
+		sigma_e = 0.4 	# The (known) standard deviation of the observation error
 
 		# Specify the experiment
 		experiment = LogisticExperiment(times,x0=x0)
